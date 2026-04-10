@@ -1,0 +1,831 @@
+% !TEX program = xelatex
+% NOTE: 为了更好的 Unicode 支持，请使用 XeLaTeX（或 LuaLaTeX）编译。
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\usepackage{xeCJK}
+\setmainfont{CMU Serif}
+\IfFontExistsTF{Noto Serif CJK SC}{\setCJKmainfont{Noto Serif CJK SC}}{%
+  \IfFontExistsTF{Source Han Serif SC}{\setCJKmainfont{Source Han Serif SC}}{%
+    \setCJKmainfont{FandolSong-Regular}% TeX Live fallback
+  }%
+}%
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{tikz-cd}
+\usepackage{multicol}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{float}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1\baselineskip}
+
+\begin{document}
+
+\begin{center}
+  {\LARGE \textbf{（在此填写论文标题）}}\\[0.5em]
+  {\large MCM/ICM Paper Draft}\par
+\end{center}
+
+\section*{摘要（Abstract）}
+（待补充：用约 150--250 词概括问题背景、模型与算法、主要结果与结论，并给出模型优缺点摘要。）
+
+\section{Problem Restatement}
+\subsection{Background}
+智能手机已成为通信、导航和日常工作的核心工具，其性能高度依赖锂离子电池的供能能力。尽管电池技术不断进步，但在相似使用条件下，智能手机电池续航时间仍存在显著差异，这表明电池耗电并非由单一使用强度决定。
+
+研究表明，智能手机功耗主要受屏幕亮度、处理器负载、无线通信、定位服务以及后台进程等因素影响 [1,2]。环境温度通过改变电池有效容量和放电效率显著影响续航表现，尤其在低温或高负载条件下更为明显 [3]。此外，电池随使用周期逐渐老化，其可用容量衰减并改变放电特性 [4]。
+
+现有续航预测方法多基于离散时间回归或数据驱动模型 [5]。虽然这类方法在一定程度上提高了预测精度，但缺乏物理可解释性，难以明确区分各功能模块对耗电的具体贡献。近年来，基于微分方程的连续时间电池模型逐渐受到关注，可将温度与老化效应统一纳入 SOC 动力学描述中 [6]。
+
+同时，Android 子系统功耗测量工具以及开放的锂离子电池老化数据集为模型参数估计与验证提供了现实基础 [7,8]。因此，有必要构建一个将 SOC 演化与屏幕、处理器、网络、GPS、后台任务、温度及老化因素显式联系起来的连续时间模型。
+
+
+\subsection{Restatement}
+
+本研究旨在建立一个连续时间数学模型，用以描述智能手机锂离子电池在真实使用条件下荷电状态 $\mathrm{SOC}(t)$ 的演化规律，并据此预测不同工况下的剩余可用时间。模型强调基于物理机理的可解释性，而非经验拟合方法。
+
+\begin{enumerate}
+\item 基于能量守恒原理，构建电池 $\mathrm{SOC}$ 的连续时间演化模型，使其变化率由瞬时功率消耗与电池有效输出能力共同决定。
+
+\item 在基础能量模型中引入温度相关机制，以刻画环境条件及使用过程中的温升对电池有效容量和放电效率的影响。
+
+\item 将智能手机的总功率消耗表示为多个子系统功率之和，包括屏幕显示、处理器负载、网络通信、定位功能及后台活动等，从而描述不同使用场景。
+
+\item 基于完整模型，在不同初始 $\mathrm{SOC}$ 和使用模式下预测电池达到耗尽状态的时间，并分析影响续航的主要因素。
+
+\item 进一步考虑电池老化对有效容量和输出能力的影响，评估其对续航预测结果的作用，并讨论模型的推广适用性。
+\end{enumerate}
+
+
+
+\section{Model Assumptions}
+
+为在保证物理合理性的前提下构建可求解的能量–温度耦合模型，本文在系统层面对智能手机电池及其能量传输过程作如下假设。
+
+\paragraph{假设 1：电池内部能量分布均匀，可视为集中参数能量池}
+电池内部能量在空间上分布均匀，系统可由单一状态变量 $E(t)$ 描述。
+
+\textbf{理由：}
+电池内部的电化学反应过程涉及锂离子浓度、电势分布及微观反应动力学，其空间分布高度复杂。本文关注的是系统层面的能量变化与功率输出行为，而非微观电化学细节。因此，将电池视为能量在空间上均匀分布的集中参数系统，是一种常用且合理的宏观近似。
+
+\paragraph{假设 2：能量通过等效能量通道向各器件供给}
+设备内部的能量供给过程可等效为一条统一的能量传输通道。
+
+\textbf{理由：}
+尽管实际手机内部存在多级电源管理与复杂电路结构，但从能量守恒与系统建模角度出发，其综合作用可抽象为一条等效能量通道，有助于统一描述能量输出、传输损耗及功率限制。
+
+\paragraph{假设 3：智能手机可视为整体热系统，温度在空间上均匀}
+智能手机内部温度在空间上近似均匀，采用单一温度变量 $T(t)$ 描述系统热状态，初始温度取为环境温度。
+
+\textbf{理由：}
+由于手机结构紧凑、器件高度集成，其内部导热及与环境之间的热交换过程相对于电池放电时间尺度较快，可忽略空间温度梯度，采用集中参数热模型是合理的。
+
+\paragraph{假设 4：低温对电池性能的影响在所考虑温度范围内是可逆的}
+低温引起的电池性能下降不产生永久性损伤。
+
+\textbf{理由：}
+在非极端低温条件下，电池性能下降主要由内阻升高和反应速率降低引起。当温度恢复至正常工作区间后，其性能可在较大程度上恢复，因此本文不引入不可逆老化机制。
+
+\paragraph{假设 5：电池输出能力随剩余能量状态下降而降低}
+电池的有效输出能力与其剩余能量状态存在耦合关系。
+
+\textbf{理由：}
+随着放电过程推进，可参与电化学反应的活性锂离子数量逐渐减少，反应动力学受限，从而降低单位时间内可输出的能量，该现象在低剩余能量阶段尤为明显。
+
+\paragraph{假设 6：能量传输过程中的耗散与能流强度呈二次关系}
+能量在传输过程中产生的耗散与能量流动强度的平方成正比。
+
+\textbf{理由：}
+内阻及等效阻性效应会导致能量耗散，且该耗散在高功率输出条件下显著增强。采用二次耗散形式可在现象学层面刻画该非线性特征。
+
+\paragraph{假设 7：电池耗尽定义为无法满足最小功率需求}
+当系统无法满足设备的最小工作功率需求时，认为电池已耗尽。
+
+\textbf{理由：}
+实际设备关机并非源于化学能完全耗尽，而是由于电压和功率无法维持正常工作。以功率可行性作为耗尽判据更符合工程实际。
+
+
+\section{Model Development and Solution}
+\subsection{SOC Redefinition and Logical Framework}
+在电池管理系统（BMS）的传统架构中，SOC 通常基于电荷累积逻辑，由\textbf{库仑计数法（Coulomb Counting）}定义为
+\begin{equation}
+  \mathrm{SOC}(t)=\mathrm{SOC}(0)-\int_{0}^{t}\frac{\eta\, i(\tau)}{C_n}\,\mathrm{d}\tau,
+\end{equation}
+其中 $i(t)$ 为电池电流，$C_n$ 为额定容量，$\eta$ 为库仑效率。该方法在稳态环境下具有较好的计算便捷性，但在智能手机面对的\textbf{高动态功耗（High-dynamic power load）}与\textbf{强环境耦合（Strong environmental coupling）}场景下，其局限性较为突出：库仑计数本质上是对电荷存量的静态描述，无法反映电池在极端温度或放电后期“有电却无法有效输出”的动力学约束。
+
+OCV映射法在手机高负载运行（如游戏或快充）时，会因无法解耦复杂的极化现象与电压迟滞，导致电量显示在负载波动时出现非物理性的跳变；而ECM模型则难以实时捕捉因温度非均匀分布和电池老化带来的参数漂移，导致估算精度随使用环境和寿命周期迅速衰减。
+
+为使模型更贴近\textbf{系统级可用续航}的工程实质，本文提出基于\textbf{能量池（energy reservoir）}逻辑的动态 SOC 定义。我们利用有效能量密度 $\rho(t)$ 的相对盈余量来表征电池的“服务能力”，定义
+
+\begin{equation}
+  \mathrm{SOC}(t) = 100\% \times \frac{\rho(t) - \rho_{\min}(T)}{\rho_{\max} - \rho_{\min}(T)}.
+  \label{eq:SOC}
+\end{equation}
+
+其中 $\rho_{\max}$ 为参考温度下的额定可用能量密度，$\rho_{\min}(T)$ 为与温度强相关的不可用阈值（例如“无法满足最小工作功率需求”的截止条件）。这一定义的演进基于以下三个维度的考量：
+\begin{enumerate}
+  \item \textbf{从电荷存量到功能可用性的维度跃迁。} 传统方法仅关注离子的物理计数；而在低温或高阻抗状态下，即便电池尚存电荷，其输出功率也可能无法满足系统的最小需求而导致意外关机。能量池模型通过 $\rho(t)$ 刻画瞬时供能品质，使 SOC 成为\textbf{功能导向（function-oriented）}的状态指标。
+
+  \item \textbf{环境抑制效应的内生化表达。} 通过引入 $\rho_{\min}(T)$，我们将环境温度对电池性能的抑制作用由“外部干扰”转化为“系统内变量”。当环境温度骤降导致所需电池内部 $\rho_{\min}(raw)$ 抬升时，SOC 将自动呈现收缩趋势，从而能够前瞻性地预警极寒环境下的“自动关机/跳电”现象。
+
+  \item \textbf{功率守恒框架下的逻辑统一。} 鉴于手机子系统（如 5G 模块与高性能 SoC）均为功率负载，直接基于热力学第一定律构建能量池模型，可以消除电压波动带来的换算误差，确保从电池输出到终端耗能（W）在量纲与守恒关系上的一致性。
+\end{enumerate}
+
+\subsection{Energy--Temperature Coupled Dynamics}
+基于上述框架，我们将电池视为参数均匀分布的集中参数能量库。在能量流动过程中，系统演化遵循以下物理规律。
+
+\paragraph{(1) 能量平衡与热反馈控制}
+电池的剩余可用能量 $E(t)$ 随输出功率 $P_{\text{out}}(t)$ 的消耗而演变：
+\begin{equation}
+  \frac{\mathrm{d}E(t)}{\mathrm{d}t} = -P_{\text{out}}(t).
+\end{equation}
+同时，为显式捕捉温度影响，引入集中参数热模型：
+\begin{equation}
+  C_{\text{th}}\frac{\mathrm{d}T(t)}{\mathrm{d}t} = P_{\text{heat}}(t) - h\bigl(T(t)-T_a\bigr),
+\end{equation}
+其中 $P_{\text{heat}}(t)$ 来源于能量传输过程中的不可逆损耗。该热反馈回路揭示了“功耗产生热量—热量改变温度—温度反向作用于供能能力”的耦合机制。
+
+\paragraph{(2) 能量通道的流体类比表达：驱动力视角}
+为了量化电池内部供能能力的演化，我们将功率传递过程抽象为流体动力学输送过程。定义电池输出的总功率 $P_{\text{out}}(t)$ 为：
+\begin{equation}
+  P_{\text{out}}(t) = F_{\text{drive}}(t) \cdot v(t) = \left[ \rho(t) S \right] \cdot v(t),
+\end{equation}
+其中，我们将 $\rho(t) S$ 视为系统内部的“能量驱动力”（Driving Force），其量纲为 $[N]$；$v(t)$ 为能量流动的等效速度；$S$ 为能量通道的等效截面积。
+
+在此框架下，能量密度 $\rho(t)$ 并非静态常数，而是受到剩余能量存量与环境温度的双重非线性调制：
+\begin{equation}
+  \rho(t) = \alpha\bigl(T(t)\bigr) \left( \frac{E(t)}{E_{\max}} \right)^{\gamma} \frac{E(t)}{V}.
+\end{equation}
+其中，温度修正系数 $\alpha(T)$ 刻画了低温下化学反应动力学的抑制效应；幂律项 $\gamma$ 则反映了放电后期活性物质减少导致的供能边界收缩。
+
+\paragraph{(3) 损耗分解与负载平衡：粘性摩擦与关机判据}
+能量在通道传输中不可避免地存在不可逆损耗。基于流体机械类比，我们将该损耗建模为与流速相关的“粘性摩擦功率”：
+\begin{equation}
+  P_{\text{loss}}(t) = F_{\text{fric}}(t) \cdot v(t) = \left[ \mu \rho(t) S v(t) \right] \cdot v(t) = \mu \rho(t) S v(t)^2.
+\end{equation}
+此处，$\mu$ 为等效摩擦阻尼因子。由此，系统的功率平衡方程（驱动功率 = 损耗功率 + 有效负载功率）可表述为：
+\begin{equation}
+  \rho(t) S v(t) = \mu \rho(t) S v(t)^2 + P(t). \label{eq:power_balance}
+\end{equation}
+
+实际智能手机系统中，“电池没电”并不意味着电池内部的化学能完全耗尽（Energy Exhaustion）。由于内阻上升、温度抑制及功率需求约束，即使电池中仍存有能量，其输出功率也可能不足以维持系统的最低运行需求，从而触发自动关机。
+
+在本文的能量通道模型中，这一“有能量却无法输出”的现象被自然地刻画为方程解的奇异性（Singularity）。具体而言，将功率平衡方程 \eqref{eq:power_balance} 整理为关于流速 $v(t)$ 的一元二次形式：
+\begin{equation}
+  \mu\,\rho(t)\,S\,v(t)^2 - \rho(t)\,S\,v(t) + P(t) = 0.
+\end{equation}
+该方程存在实数解的物理充要条件是其判别式 $\Delta \ge 0$：
+\begin{equation}
+  \Delta = \bigl(\rho(t) S\bigr)^2 - 4\mu\rho(t)S P(t) \ge 0 \quad \Longrightarrow \quad \rho(t) \ge \frac{4\mu P(t)}{S}. \label{eq:critical_rho}
+\end{equation}
+式 \eqref{eq:critical_rho} 深刻揭示了系统关机的物理本质：
+\begin{itemize}
+    \item 当电池能量密度 $\rho(t)$ 因低温或低电量降至临界值 $\frac{4\mu P(t)}{S}$ 以下时，方程无实根。
+    \item 物理上意味着：此时电池内阻引起的不可逆损耗增长过快，即便无限增加能量流速 $v$，通道输出功率的上限也低于负载需求 $P(t)$。
+    \item 系统在此刻发生\textbf{功能性崩溃（Functional Collapse）}，而非能量耗尽。
+\end{itemize}
+
+基于此判据，我们定义维持手机最低运行功耗 $P_{\min}$ 所需的最低能量密度阈值 $\rho_{\min}(T)$：
+\begin{equation}
+  \rho_{\min}(T) = \frac{4\mu P_{\min}}{S}.
+\end{equation}
+（注：此处 $\rho_{\min}$ 实际上隐含了温度修正，因为若考虑 $\rho(t)$ 自身的温度系数 $\alpha(T)$，实际物理约束会更严苛，此处为简化表达形式）。
+
+据此，我们就得到了上文中\textbf{功能性荷电状态（Functional SOC）}的表达式\ref{eq:SOC}。
+
+
+\paragraph{综合方程组}
+综合上述关系，可得模型的耦合动力学方程组：
+\begin{equation}
+\left\{
+\begin{aligned}
+  \frac{\mathrm{d}E(t)}{\mathrm{d}t} &= -P_{\text{out}}(t),\\
+  C_{\text{th}}\frac{\mathrm{d}T(t)}{\mathrm{d}t} &= P_{\text{heat}}(t) - h\bigl(T(t)-T_a\bigr),\\
+  P_{\text{heat}}(t) &= P_{\text{loss}}(t),\\
+  P_{\text{out}}(t) &= P_{\text{loss}}(t) + P(t),\\
+  \rho(t) &= \alpha\!\bigl(T(t)\bigr)\left(\frac{E(t)}{E_{\max}}\right)^{\gamma}\frac{E(t)}{V},\\
+  P_{\text{out}}(t) &= \rho(t)\,v(t)\,S,\\
+  P_{\text{loss}}(t) &= \mu\,\rho(t)\,S\,v(t)^2.
+\end{aligned}
+\right.
+\end{equation}
+在给定初始条件 $E(0)$、$T(0)=T_a$ 与负载功耗函数 $P(t)$ 后，上述方程组可用于计算 $E(t)$ 与 $T(t)$ 的演化，并据此得到 $\rho(t)$ 与动态 SOC，从而估计电池耗尽时间。
+
+
+\subsection{负载功耗函数 $P(t)$}
+
+\subsubsection{数据来源与预处理}
+为准确量化功耗演化函数 $P(t)$，本文采用 Zenodo 平台提供的智能手机高精度功耗数据集（记录号：14314943）。该数据集涵盖了多样化操作场景下的硬件状态细粒度追踪（如 CPU 频率、屏幕参数等）及瞬时功耗读数，为模型构建提供了坚实的数据基础。
+
+\subsubsection{特征筛选：方差贡献分析}
+现代智能手机集成了众多外围传感器（如 GPS、加速度计、WLAN 模块）。若对每一组件单独建模，将引入显著的过拟合风险。为识别主导系统波动的核心动态负载，我们引入\textbf{方差贡献率（Variance Contribution Rate, VCR）}指标。对于第 $i$ 个组件，其 VCR 定义为：
+\begin{equation}
+    \text{VCR}_i = \frac{\text{Var}(P_i(t))}{\text{Var}(P_{\text{total}}(t))} \times 100\%.
+\end{equation}
+
+正如帕累托图（图 \ref{fig:pareto}）所示，我们观察到负载特性呈现明显的两极分化：
+\begin{itemize}
+    \item \textbf{动态负载（Dynamic Loads）：} CPU、GPU 与屏幕表现出极高的 VCR，主导了整体功耗的波动特征。
+    \item \textbf{准静态负载（Quasi-static Loads）：} WLAN 等组件尽管贡献了约 8.2\% 的平均能耗，但其方差贡献可忽略不计。这表明在典型活跃使用场景下，它们表现为恒定的背景负载。
+\end{itemize}
+因此，为简化模型复杂度，我们将 WLAN、GPS、传感器及空闲状态下的摄像头聚类为一个静态基准项，记为 $P_{\text{base}}$。
+
+% 请确保图片文件名为 variance_pareto_chart.png 或自行修改
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{lost.png}
+    \caption{方差贡献的帕累托分析。低方差组件的“长尾”特征证明了将其聚合为静态基准项的合理性。}
+    \label{fig:pareto}
+\end{figure}
+
+\subsubsection{子系统功耗建模}
+基于特征筛选结果，我们将总瞬时功耗 $P(t)$ 分解为四个主要部分：
+\begin{equation}
+    P(t) = P_{\text{base}} + P_{\text{cpu}}(t) + P_{\text{disp}}(t) + P_{\text{gpu}}(t) + P_{\text{thermal}}(t).
+\end{equation}
+
+\paragraph{CPU 功耗模型（DVFS 机制）}
+依据动态电压频率调整（DVFS）原理，功耗与 $V^2 f$ 成正比。鉴于工作区间内电压 $V$ 通常随频率 $f$ 线性缩放，我们将 CPU 功耗建模为频率的二次函数。考虑到异构多核架构（大/中/小核），模型表述为：
+\begin{equation}
+    P_{\text{cpu}}(t) = \sum_{k \in \{big, mid, lit\}} \beta_k \cdot f_k^2(t).
+\end{equation}
+采用非负最小二乘法（NNLS）回归以确保物理参数的非负性（$\beta_k \ge 0$），辨识得到的系数如下：
+\begin{equation}
+    P_{\text{cpu}}(t) = 0.3989 f_{big}^2(t) + 0.0471 f_{mid}^2(t) + 0.2498 f_{little}^2(t).
+\end{equation}
+
+\paragraph{屏幕功耗模型（OLED 特性）}
+对于 OLED 屏幕，功耗取决于像素发光强度与背光亮度。将其建模为 RGB 通道与亮度 $L(t)$ 的线性组合：
+\begin{equation}
+    P_{\text{disp}}(t) = w_R R(t) + w_G G(t) + w_B B(t) + \gamma L(t).
+\end{equation}
+辨识方程为：
+\begin{equation}
+    P_{\text{disp}}(t) = 586 R(t) + 589 G(t) + 1265 B(t) + 3423 L(t).
+\end{equation}
+值得注意的是，蓝光通道系数（$1265$）显著高于其他通道。这符合蓝色有机材料发光效率较低的物理事实，验证了模型具有良好的物理可解释性。
+
+\paragraph{GPU 与显存模型}
+由于 GPU 频率状态（$f_{g,0}$ 与 $f_{g,1}$）之间存在高度多重共线性，我们仅保留主频率项。显存（Memory）功耗波动被发现统计显著性不足（系数被 NNLS 压缩为 0），这可能是因为其波动被核心逻辑功耗所掩盖。简化后的 GPU 模型为：
+\begin{equation}
+    P_{\text{gpu}}(t) = \theta_1 f_{g,1}^2(t) = 0.9412 f_{g,1}^2(t).
+\end{equation}
+
+\paragraph{热耦合项}
+理论上温度影响漏电流（$P_{thermal} \propto T$）。然而在 NNLS 约束下，所有热相关系数（$\beta_T, \beta_{iT}$）均收敛至零。这表明在数据集覆盖范围内，温度对瞬时功耗的边际贡献相较于动态开关功耗极为微弱，或已被 CPU 频率项的共线性所吸收。因此，在最终回归中省略 $P_{\text{thermal}}(t)$ 项。
+
+\subsubsection{全局回归与修正}
+\paragraph{基准功耗辨识}
+静态截距项 $P_{\text{base}}$ 捕获了准静态组件（WLAN 等）的聚合功耗及背景漏电流：
+\begin{equation}
+    P_{\text{base}} = 490,701 \, \mu\text{W} \approx 491 \, \text{mW}.
+\end{equation}
+
+\paragraph{分段钳位修正 (PCC)}
+全局回归实现了极高的拟合优度（$R^2 = 0.938$）。然而，在超低负载区间（CPU 频率 $< 550$ MHz），由于缺乏训练数据，线性外推表现出一定偏差。为增强模型鲁棒性，引入\textbf{分段钳位修正（Piecewise Clamping Correction）}：
+\begin{equation}
+    P_{\text{final}}(t) = 
+    \begin{cases} 
+    \max(935,000, \hat{P}(t)), & \text{if } f_{big}(t) < 550 \text{ MHz}, \\
+    \hat{P}(t), & \text{otherwise}.
+    \end{cases}
+\end{equation}
+其中 $\hat{P}(t)$ 为上述子模型之和，$935$ mW 为数据集中观测到的经验下界。
+
+
+\section{Time-to-Empty Problem}
+
+为刻画能量–温度耦合条件下系统的续航能力，本文引入
+\emph{Time-to-Empty（TTE）} 的概念，用以表示系统在给定初始状态与使用情景下，
+首次无法维持正常输出或能量耗尽的时间。本部分我们继续沿用前文所建立的模型进行求解。
+
+设 $E(t)$ 表示时刻 $t$ 能量池中的可用能量，$T(t)$ 表示电池温度。
+给定初始条件
+\[
+E(0)=E_0, \qquad T(0)=T_0,
+\]
+以及由使用情景决定的功耗需求 $P(t)$，
+定义 TTE 为
+\[
+\mathrm{TTE}
+:= \inf \left\{ t \ge 0 \;\middle|\;
+\text{系统输出不可持续或能量耗尽} \right\}.
+\]
+
+系统在任意时刻的输出能力由等效能量密度 $\rho(t)$ 表征，其定义为
+\[
+\rho(t)
+=
+\alpha\!\left(T(t)\right)
+\left( \frac{E(t)}{E_{\max}} \right)^{\gamma}
+\frac{E(t)}{V},
+\]
+其中 $\alpha(T)$ 为温度修正系数，$E_{\max}$ 为额定最大能量，
+$\gamma$ 为非线性指数，$V$ 表示能量池的等效体积。
+
+在时刻 $t$，系统需通过能量通道输出功率 $P(t)$，其能流速度 $v(t)$
+需满足功率平衡与耗散关系
+\[
+\mu \rho(t) S v(t)^2
+-
+\rho(t) S v(t)
++
+P(t)
+=0,
+\]
+其中 $S$ 为通道横截面积，$\mu$ 为等效耗散系数。
+
+上述方程存在实数解的充要条件为其判别式非负，即
+\[
+\Delta(t)
+=
+\left( \frac{1}{\mu} \right)^2
+-
+\frac{4 P(t)}{\mu \rho(t) S}
+\ge 0.
+\]
+该条件可等价地写为功率约束形式
+\[
+P(t) \le P_{\max}(E(t),T(t))
+:= \frac{\rho(t) S}{4\mu},
+\]
+其中 $P_{\max}(E,T)$ 表示在当前能量与温度状态下系统所能提供的最大可持续功率。
+
+因此，TTE 可被刻画为系统首次违反输出可行性条件或能量达到下限的时刻，
+即满足以下任一条件的最小时间：
+\begin{equation}
+P(t) > P_{\max}(E(t),T(t)),
+\end{equation}
+或
+\begin{equation}
+E(t) \le E_{\min},
+\end{equation}
+其中 $E_{\min}$ 为系统关断所对应的最小可用能量阈值。
+
+\vspace{0.5em}
+
+\paragraph{离散化的计算方法}
+为了保证模型在实际情景下的可计算性与数值稳定性，本文将上述连续时间动力学模型在时间轴上进行离散化，并构造逐步推进的显式更新格式。
+
+选取固定时间步长 $\Delta t>0$，定义离散时间节点
+\[
+t_n = n\Delta t, \quad n=0,1,2,\dots,N,
+\]
+并相应地引入离散状态变量
+\[
+E_n \approx E(t_n), \quad
+T_n \approx T(t_n), \quad
+\rho_n \approx \rho(t_n), \quad
+v_n \approx v(t_n).
+\]
+在第 $n$ 个时间步，系统的功耗需求记为
+\[
+P_n = P(t_n).
+\]
+
+在每一时间步开始时，根据当前温度与能量状态计算温度修正系数
+$\alpha_n=\alpha(T_n)$，并据此更新等效能量密度
+\[
+\rho_n
+=
+\alpha_n
+\left( \frac{E_n}{E_{\max}} \right)^{\gamma}
+\frac{E_n}{V}.
+\]
+随后，根据功率平衡与耗散关系，能流速度 $v_n$ 需满足代数约束
+\[
+\mu \rho_n S v_n^2
+-
+\rho_n S v_n
++
+P_n
+=0.
+\]
+其判别式为
+\[
+\Delta_n
+=
+\left(\frac{1}{\mu}\right)^2
+-
+\frac{4P_n}{\mu\rho_n S}.
+\]
+若 $\Delta_n \ge 0$，则该时间步存在实数可行解，系统在当前状态下能够满足功耗需求。
+此时取对应于较低通道负荷与更稳定耗散水平的较小根
+\[
+v_n
+=
+\frac{\frac{1}{\mu}-\sqrt{\Delta_n}}{2}.
+\]
+若 $\Delta_n < 0$，则表示在当前 $(E_n,T_n)$ 状态下系统输出能力不足以支撑功耗需求。
+本文将其视为系统进入能量耗尽或保护状态的判据，并在数值仿真中终止迭代，
+或等效地视为进入关机或降载模式。
+
+在获得 $v_n$ 后，可计算该时间步的有效输出功率与耗散功率：
+\[
+P_{\mathrm{out},n} = \rho_n v_n S, \qquad
+P_{\mathrm{loss},n} = \mu \rho_n S v_n^2.
+\]
+
+能量演化方程
+\[
+\frac{dE}{dt} = -P_{\mathrm{out}}(t)
+\]
+采用前向欧拉格式离散化，得到能量更新公式
+\[
+E_{n+1}
+=
+E_n - \Delta t\, P_{\mathrm{out},n}.
+\]
+温度演化方程
+\[
+C_{\mathrm{th}}\frac{dT}{dt}
+=
+P_{\mathrm{loss}}(t)
+-
+h\bigl(T(t)-T_a\bigr)
+\]
+同样采用前向欧拉离散化，得到
+\[
+T_{n+1}
+=
+T_n
++
+\Delta t \cdot
+\frac{P_{\mathrm{loss},n}
+-
+h\bigl(T_n-T_a\bigr)}{C_{\mathrm{th}}}.
+\]
+
+上述迭代过程在时间轴上逐步推进，直至首次出现输出不可行或能量达到下限，
+其对应的时间即被记录为系统在该初始条件与使用情景下的 Time-to-Empty。
+
+
+
+
+\subsection{基于场景聚类的 TTE 数值预测与误差量化}
+
+在前述 TTE 定义的基础上，本文通过聚类分析识别用户典型使用场景，
+并结合物理演化方程，利用蒙特卡洛模拟量化 TTE 的不确定性与关机风险。
+
+\subsubsection{使用场景的聚类建模与语义界定}
+
+为精准刻画电池使用环境，本文构建了包含功耗参数 $P$
+及网络活动特征 $\log_{10}(\mathrm{WiFi})$ 的特征向量。
+通过对聚类数目 $K \in [2,10]$ 进行评估，实验结果表明 $K=5$
+在类内紧凑性与类间可分性之间取得最优平衡。
+
+\begin{table}[htbp]
+\centering
+\caption{不同聚类场景下的关键特征参数均值对比 ($K=5$)}
+\label{tab:cluster_features_mean}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{ccccccccccc}
+\hline
+\multirow{2}{*}{\textbf{Cluster}} & \multicolumn{3}{c}{\textbf{CPU Frequency (kHz)}} & \multicolumn{3}{c}{\textbf{Screen RGB}} & \textbf{Screen} & \multicolumn{2}{c}{\textbf{Network}} & \multirow{2}{*}{\textbf{N}} \\ \cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){9-10}
+ & \textbf{Big} & \textbf{Mid} & \textbf{Little} & \textbf{R} & \textbf{G} & \textbf{B} & \textbf{L} & \textbf{WiFi} & \textbf{Log(WiFi)} & \\ \hline
+1 & 1,682,577 & 2,760,183 & 2,152,602 & 136.7 & 132.5 & 116.6 & 53.2 & 3.92 & 6.53 & 35 \\
+2 & 1,954,527 & 1,877,020 & 979,094 & 130.3 & 112.6 & 130.8 & 42.3 & 3.97 & 6.45 & 124 \\
+3 & 1,235,138 & 1,624,033 & 1,107,082 & 136.3 & 121.2 & 123.4 & 50.5 & 0.00 & 0.00 & 102 \\
+4 & 876,084 & 1,306,860 & 1,135,827 & 109.2 & 132.0 & 125.0 & 58.5 & 4.29 & 6.52 & 97 \\
+5 & 1,219,498 & 1,482,032 & 1,030,788 & 118.3 & 124.8 & 126.6 & 47.4 & 3.79 & 6.47 & 488 \\ \hline
+\end{tabular}}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{五类使用场景的功耗统计特征}
+\label{tab:cluster_stats}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{cccccccc}
+\hline
+\textbf{类别} & \textbf{样本量} & \textbf{均值} & \textbf{标准差} & \textbf{偏度} & \textbf{峰度} & \textbf{分布} & \textbf{场景语义} \\ \hline
+1 & 35 & $4.28\times10^6$ & $7.97\times10^5$ & 0.024 & 0.253 & Gaussian & 高性能持续负载 \\
+2 & 124 & $3.49\times10^6$ & $8.55\times10^5$ & 1.437 & 1.738 & Empirical & 动态多任务 \\
+3 & 102 & $2.36\times10^6$ & $4.82\times10^5$ & 1.227 & 2.062 & Empirical & 中等功能性使用 \\
+4 & 97 & $1.68\times10^6$ & $3.70\times10^5$ & 0.228 & -0.514 & Gaussian & 低功耗稳定使用 \\
+5 & 488 & $2.24\times10^6$ & $4.58\times10^5$ & 2.283 & 9.826 & Empirical & 高波动后台活动 \\ \hline
+\end{tabular}
+\end{table}
+
+基于上述统计特征，五类聚类结果可分别解释为以下典型使用场景：
+\begin{itemize}
+    \item \textbf{Sustained High-Performance Load}（Cluster 1）
+    \item \textbf{Burst-Driven Multitasking}（Cluster 2）
+    \item \textbf{Moderate Functional Usage}（Cluster 3）
+    \item \textbf{Low-Power Stable Usage}（Cluster 4）
+    \item \textbf{High-Variance Background Activity}（Cluster 5）
+\end{itemize}
+
+\subsubsection{TTE 不确定性与关机风险建模}
+
+针对不同使用场景的统计特性，本文对每一类场景进行蒙特卡洛采样，
+并构建对应的 TTE 概率分布 $f_{TTE}(t)$。
+对于近似高斯分布的场景，TTE 预测结果集中且稳定；
+而在具有显著偏度与峰度的场景中，TTE 分布呈现明显长尾特征。
+
+进一步地，基于输出可行性判据
+\[
+\Delta_n = \left( \frac{1}{\mu} \right)^2 - \frac{4P_n}{\mu\rho_n S},
+\]
+本文定义关机风险函数为
+\[
+R(t) = P(\Delta_n < 0 \mid t_n \le t)
+= \Phi\!\left(
+\frac{E[P_n] - P_{\mathrm{crit}}(E_n,T_n)}{\sigma_P}
+\right),
+\]
+其中 $P_{\mathrm{crit}}=\rho_n S/(4\mu)$ 为系统在当前状态下的临界可持续功率。
+高峰度场景中瞬时功率脉冲更易突破该临界值，
+从而显著提高系统提前关断的风险。
+
+
+
+
+
+
+
+
+
+
+\section{Results and Analysis}
+
+
+\subsection{功耗验证}
+根据前述功耗模型构建方法，本文对智能手机在多种使用场景下的瞬时功耗进行了预测。
+然后使用
+$R^2 = 1 - \frac{SS_{\text{res}}}{SS_{\text{tot}}}$
+指标评估模型的拟合优度，其中
+$SS_{\text{res}}=\sum_{i=1}^n (y_i-\hat y_i)^2$
+$SS_{\text{tot}}=\sum_{i=1}^n (y_i-\bar y)^2,\quad \bar y=\frac{1}{n}\sum_{i=1}^n y_i$
+计算结果表明，$R^2=0.938$
+
+
+
+
+
+
+
+
+
+
+
+
+\section{Sensitivity Analysis}
+
+\subsection{模型参数敏感性分析}
+
+为评估模型预测结果对关键参数取值不确定性的依赖程度，本小节对模型中的若干参数进行敏感性分析。
+分析采用单参数扰动方式，在基准工况下对单一参数施加 $\pm5\%$ 与 $\pm10\%$ 的变化，其余参数保持不变。
+除特别说明外，续航性能以能量侧发生截断时的仿真时间作为评价指标；热相关参数的分析以系统温度水平作为评价指标。
+
+\paragraph{几何参数比值 $V/S$}
+
+在模型中，几何参数仅通过比值 $V/S$ 进入能量密度表达式。为避免多参数耦合，在数值实验中固定 $S=1$，对 $V$ 进行扰动，从而等价地分析 $V/S$ 的敏感性。基准值取 $V/S=500$。
+
+\begin{table}[H]
+\centering
+\caption{$V/S$ 对能量侧截断时间的影响}
+\begin{tabular}{ccc}
+\hline
+$V/S$ 变化比例 & 截断时间 (s) & 相对变化 \\ \hline
+$-10\%$ & 14857.6 & $+0.96\%$ \\
+$-5\%$  & 14786.6 & $+0.47\%$ \\
+$0$     & 14717.0 & $0$ \\
+$+5\%$  & 14648.2 & $-0.47\%$ \\
+$+10\%$ & 14580.6 & $-0.93\%$ \\ \hline
+\end{tabular}
+\end{table}
+
+随着 $V/S$ 的增大，系统在能量侧更早发生不可行解，截断时间略有缩短。但在 $\pm10\%$ 的扰动范围内，
+截断时间变化幅度均小于 $1\%$，表明模型预测对该几何比值并不敏感。考虑到 $V$ 与 $S$ 在模型中属于抽象参数，
+其对预测结果的低敏感性有助于提升模型的稳健性。
+
+\paragraph{低电量抑制指数 $\gamma$}
+
+参数 $\gamma$ 控制低电量条件下输出能力的非线性抑制强度，本部分仅考察其对能量侧截断时间的影响。
+
+\begin{table}[H]
+\centering
+\caption{$\gamma$ 对能量侧截断时间的影响}
+\begin{tabular}{ccc}
+\hline
+$\gamma$ 变化比例 & 截断时间 (s) & 相对变化 \\ \hline
+$-10\%$ & 14800.8 & $+0.57\%$ \\
+$-5\%$  & 14759.0 & $+0.29\%$ \\
+$0$     & 14717.0 & $0$ \\
+$+5\%$  & 14674.8 & $-0.29\%$ \\
+$+10\%$ & 14632.4 & $-0.57\%$ \\ \hline
+\end{tabular}
+\end{table}
+
+结果表明，$\gamma$ 的变化对截断时间的影响呈现对称且幅度有限的特征，说明模型对该指数参数具有良好的鲁棒性。
+
+\paragraph{能道耗散系数 $\mu$}
+
+参数 $\mu$ 决定能量通道中的等效耗散强度，同时影响由能量损失转化而来的产热水平。
+因此，本部分同时分析 $\mu$ 对能量侧截断时间与系统温度的影响。
+
+\begin{table}[H]
+\centering
+\caption{能道耗散系数 $\mu$ 对截断时间与温度的影响}
+\begin{tabular}{cccc}
+\hline
+$\mu$ 变化比例 & 截断时间 (s) & 时间相对变化 & 截断时温度 ($^\circ$C) \\ \hline
+$-10\%$ & 14857.6 & $+0.96\%$ & 26.2549 \\
+$-5\%$  & 14786.6 & $+0.47\%$ & 26.2716 \\
+$0$     & 14717.0 & $0$       & 26.2896 \\
+$+5\%$  & 14648.2 & $-0.47\%$ & 26.3042 \\
+$+10\%$ & 14580.6 & $-0.93\%$ & 26.3195 \\ \hline
+\end{tabular}
+\end{table}
+
+随着 $\mu$ 的增大，能量通道中的耗散与产热同步增强，能量可行区间缩短，截断时间相应提前，同时系统温度略有升高。
+
+\paragraph{等效热容 $C_{\mathrm{th}}$}
+
+等效热容 $C_{\mathrm{th}}$ 描述系统的热惯性，仅影响温度演化过程，不直接参与能量侧代数约束。
+
+\begin{table}[H]
+\centering
+\caption{$C_{\mathrm{th}}$ 对系统温度的影响}
+\begin{tabular}{ccc}
+\hline
+$C_{\mathrm{th}}$ 变化比例 & 截断时温度 ($^\circ$C) & 相对变化 \\ \hline
+$-10\%$ & 26.3345 & $+0.17\%$ \\
+$-5\%$  & 26.3114 & $+0.08\%$ \\
+$0$     & 26.2896 & $0$ \\
+$+5\%$  & 26.2688 & $-0.08\%$ \\
+$+10\%$ & 26.2490 & $-0.15\%$ \\ \hline
+\end{tabular}
+\end{table}
+
+\paragraph{对流换热系数 $h$}
+
+参数 $h$ 决定系统与环境之间的热交换强度，仅通过热平衡方程影响温度演化。
+
+\begin{table}[H]
+\centering
+\caption{$h$ 对系统温度的影响}
+\begin{tabular}{ccc}
+\hline
+$h$ 变化比例 & 截断时温度 ($^\circ$C) & 相对变化 \\ \hline
+$-10\%$ & 26.3830 & $+0.35\%$ \\
+$-5\%$  & 26.3344 & $+0.17\%$ \\
+$0$     & 26.2896 & $0$ \\
+$+5\%$  & 26.2480 & $-0.16\%$ \\
+$+10\%$ & 26.2093 & $-0.30\%$ \\ \hline
+\end{tabular}
+\end{table}
+
+\paragraph{本小节小结}  
+参数敏感性分析结果表明，模型对几何参数比值 $V/S$、低电量抑制指数 $\gamma$ 以及能道耗散系数 $\mu$ 的取值变化均不敏感，
+其在合理扰动范围内对续航预测的影响幅度较小。这一特性有利于在参数物理意义较为抽象的情况下保持预测结果的稳定性。
+热相关参数主要影响系统温度演化过程，而不会改变能量侧截断行为，体现了模型中能量约束与热过程的有效分离。
+
+
+\subsection{基于聚类场景的敏感性分析}
+
+在上一小节验证了模型对关键参数取值具有良好的鲁棒性后，本小节进一步从使用场景角度出发，分析不同聚类场景下功率模型对输入变量的敏感性差异。基于聚类结果中每一类场景的代表性状态点（均值），对功率模型在该工作点附近进行局部灵敏性分析，以识别各场景下的主导耗电因素。
+
+灵敏性指标采用归一化形式
+\[
+S_x=\frac{\partial \hat{P}}{\partial x}\cdot\frac{x}{\hat{P}},
+\]
+其物理含义为在当前场景下，变量 $x$ 增加 $1\%$ 时引起的功率相对变化幅度。
+
+
+\paragraph{Cluster 1 场景内敏感性}
+
+\begin{table}[H]
+\centering
+\caption{Cluster 1 的归一化功率灵敏性}
+\begin{tabular}{cc}
+\hline
+变量 & 灵敏性 $S_x$ \\ \hline
+$f_{\mathrm{big}}$ & 1.2415 \\
+$f_{\mathrm{mid}}$ & 0.3935 \\
+$f_{\mathrm{lit}}$ & 0.3650 \\
+$L$ & $1.00\times10^{-7}$ \\
+$B$ & $8.11\times10^{-8}$ \\
+$R$ & $4.27\times10^{-8}$ \\
+$G$ & $3.77\times10^{-8}$ \\
+$f_{\mathrm{gpu}}$ & $1.93\times10^{-8}$ \\ \hline
+\end{tabular}
+\end{table}
+
+该场景中功率对 CPU 频率高度敏感，尤其由大核频率主导，中核与小核次之，而屏幕相关变量与 GPU 频率的边际影响较小。
+
+\paragraph{Cluster 2 场景内敏感性}
+
+\begin{table}[H]
+\centering
+\caption{Cluster 2 的归一化功率灵敏性}
+\begin{tabular}{cc}
+\hline
+变量 & 灵敏性 $S_x$ \\ \hline
+$f_{\mathrm{big}}$ & 1.5799 \\
+$f_{\mathrm{lit}}$ & 0.2484 \\
+$f_{\mathrm{mid}}$ & 0.1716 \\
+$B$ & $8.58\times10^{-8}$ \\
+$L$ & $7.50\times10^{-8}$ \\
+$G$ & $3.99\times10^{-8}$ \\
+$R$ & $3.42\times10^{-8}$ \\
+$f_{\mathrm{gpu}}$ & $1.67\times10^{-8}$ \\ \hline
+\end{tabular}
+\end{table}
+
+该场景中大核频率对功率的影响显著增强，呈现出典型的高性能需求特征，而小核与中核的影响明显弱于大核。
+
+
+\paragraph{Cluster 3 场景内敏感性}
+
+\begin{table}[H]
+\centering
+\caption{Cluster 3 的归一化功率灵敏性}
+\begin{tabular}{cc}
+\hline
+变量 & 灵敏性 $S_x$ \\ \hline
+$f_{\mathrm{big}}$ & 1.1716 \\
+$f_{\mathrm{lit}}$ & 0.5898 \\
+$f_{\mathrm{mid}}$ & 0.2386 \\
+$L$ & $1.66\times10^{-7}$ \\
+$B$ & $1.50\times10^{-7}$ \\
+$G$ & $6.99\times10^{-8}$ \\
+$R$ & $6.84\times10^{-8}$ \\
+$f_{\mathrm{gpu}}$ & $2.76\times10^{-8}$ \\ \hline
+\end{tabular}
+\end{table}
+
+该场景下，大核仍然是最主要的敏感变量，但小核频率的相对重要性明显提升，反映了持续中等负载条件下对能效型算力的依赖。
+
+
+\paragraph{Cluster 4 场景内敏感性}
+
+\begin{table}[H]
+\centering
+\caption{Cluster 4 的归一化功率灵敏性}
+\begin{tabular}{cc}
+\hline
+变量 & 灵敏性 $S_x$ \\ \hline
+$f_{\mathrm{lit}}$ & 0.9098 \\
+$f_{\mathrm{big}}$ & 0.8638 \\
+$f_{\mathrm{mid}}$ & 0.2264 \\
+$L$ & $2.82\times10^{-7}$ \\
+$B$ & $2.23\times10^{-7}$ \\
+$R$ & $1.09\times10^{-7}$ \\
+$G$ & $1.04\times10^{-7}$ \\
+$f_{\mathrm{gpu}}$ & $4.15\times10^{-8}$ \\ \hline
+\end{tabular}
+\end{table}
+
+该场景中，小核频率首次成为最敏感变量，表明在低强度或后台主导的使用模式下，系统功率主要由能效核心的调度行为决定。
+
+
+\paragraph{Cluster 5 场景内敏感性}
+
+\begin{table}[H]
+\centering
+\caption{Cluster 5 的归一化功率灵敏性}
+\begin{tabular}{cc}
+\hline
+变量 & 灵敏性 $S_x$ \\ \hline
+$f_{\mathrm{big}}$ & 1.0581 \\
+$f_{\mathrm{lit}}$ & 0.7578 \\
+$f_{\mathrm{mid}}$ & 0.1841 \\
+$L$ & $1.45\times10^{-7}$ \\
+$B$ & $1.43\times10^{-7}$ \\
+$G$ & $6.65\times10^{-8}$ \\
+$R$ & $6.52\times10^{-8}$ \\
+$f_{\mathrm{gpu}}$ & $2.35\times10^{-8}$ \\ \hline
+\end{tabular}
+\end{table}
+
+该场景表现为大核与小核共同主导功率变化的特征，反映了介于高性能与低功耗之间的过渡型使用状态。
+
+
+\paragraph{本小节小结}
+基于聚类的场景敏感性分析表明，不同使用场景下功率模型的主导变量存在显著差异。高负载场景主要由大核频率主导，中等负载场景中小核的重要性逐步增强，而低强度或后台类场景则以小核调度行为为主。该结果说明，单一功率模型在不同场景下体现出不同的耗电机制，为后续续航分析与能耗优化提供了清晰的场景依据。
+
+
+\section{Model Strengths and Weaknesses}
+\subsection{Strengths}
+（待补充）
+
+\subsection{Weaknesses}
+（待补充）
+
+\section*{References}
+\begin{enumerate}
+  \item Kim, J., Lee, S., \& Park, J. (2022). Characterizing smartphone power consumption across applications. \emph{IEEE Transactions on Mobile Computing}, 21(11), 3974--3987.
+  \item Pathak, A., \& Hu, Y. C. (2023). Understanding energy drain of mobile devices from subsystem behaviors. \emph{ACM Computing Surveys}, 55(4), 1--36.
+  \item Zhang, Y., Li, W., \& Wang, H. (2022). Temperature effects on lithium-ion battery performance. \emph{Journal of Power Sources}, 522, 230993.
+  \item Madani, S. S., Shabeer, Y., Allard, F., \& Khalilpour, K. R. (2025). A comprehensive review on lithium-ion battery lifetime prediction and aging mechanism analysis. \emph{Renewable and Sustainable Energy Reviews}, 171, 114915.
+  \item Xu, F., Zhang, Q., \& Sun, J. (2022). Data-driven battery lifetime prediction for mobile devices. \emph{Energy and AI}, 9, 100155.
+  \item Zhang, L., Hu, X., \& Sun, F. (2023). Differential equation-based modeling of battery state of charge under varying loads. \emph{IEEE Transactions on Transportation Electrification}, 9(2), 2456--2468.
+  \item Google (2023). Android Battery Historian and Power Profile Documentation. \texttt{developer.android.com/studio/profile/battery-historian}
+  \item NASA Ames Research Center (2022). Lithium-ion Battery Aging Dataset. \texttt{ti.arc.nasa.gov/tech/dash/groups/pcoe/prognostic-data-repository/}
+\end{enumerate}
+
+\end{document}
